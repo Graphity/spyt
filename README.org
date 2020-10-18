@@ -1,0 +1,3 @@
+#+TITLE: SpYt
+
+cli tool to 'convert' spotify playlists to youtube playlists
