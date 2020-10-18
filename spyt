@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+
+import json
+import requests
+import argparse
+
+with open('/home/graphity/.local/bin/.cfg/spyt.json', 'r') as f:
+    spotify_base64 = json.load(f)['spotify']['credentials']
+
+class Spotify:
+    def __init__(self, auth_base64):
+        self.headers_basic = {'Authorization': f'Basic {auth_base64}'}
+        self.headers_bearer = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.get_access_token()}'
+        }
+        
+    def get_access_token(self):
+        r = requests.post('https://accounts.spotify.com/api/token', data={'grant_type': 'client_credentials'}, headers=self.headers_basic)
+        if r.status_code == 200:
+            return r.json()['access_token']
+        raise Exception(r.json()['error']['message'])
+
+    def check_endpoint(self, endpoint):
+        r = requests.get(endpoint, headers=self.headers_bearer)
+        if r.status_code == 401:
+            self.headers_bearer['Authorization'] = f'Bearer {self.get_access_token()}'
+        if r.status_code in (400, 403, 404, 429):
+            raise Exception(r.json()['error']['message'])
+
+    def get_playlists(self, user_id):
+        '''Yields id and name of every public playlist from user'''
+        endpoint = f'https://api.spotify.com/v1/users/{user_id}/playlists'
+        self.check_endpoint(endpoint)
+        playlists = requests.get(endpoint, headers=self.headers_bearer).json()['items']
+        for playlist in playlists:
+            yield f'{playlist["id"]} {playlist["name"]}'
+
+    def get_playlist_songs(self, playlist_id):
+        '''Yields name and artists of every song in playlist'''
+        endpoint = f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks'
+        self.check_endpoint(endpoint)
+        items = requests.get(endpoint, headers=self.headers_bearer).json()['items']
+        for item in items:
+            artists = [artist['name'] for artist in item['track']['album']['artists']]
+            yield f'{item["track"]["name"]} - {", ".join(artists)}'
+
+    def create_playlist(self, user_id, name):
+        endpoint = f'https://api.spotify.com/v1/users/{user_id}/playlists'
+        self.check_endpoint(endpoint)
+        r = requests.post(endpoint, headers=self.headers_bearer, data={'name': name})
+        print(r.json())
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Print spotify')
+    parser.add_argument('-su', '--spotify-user', metavar='user_id',
+                        help='print ids and names of every playlist user has line by line')
+    parser.add_argument('-sp', '--spotify-playlist', metavar='playlist_id',
+                        help='print name and artist of every track in playlist line by line')
+    args = parser.parse_args()
+    spotify_user = Spotify(spotify_base64)
+    if args.spotify_user:
+        for playlist in spotify_user.get_playlists(args.spotify_user):
+            print(playlist)
+
+    if args.spotify_playlist:
+        for song in spotify_user.get_playlist_songs(args.spotify_playlist):
+            print(song)
+
+    spotify_user.create_playlist('9hdm5bqzrh1uqc7mlhvizs5sq', 'testing create_playlist')
+    print(spotify_user.headers_bearer['Authorization'])
+
+
+if __name__ == '__main__':
+    main()
